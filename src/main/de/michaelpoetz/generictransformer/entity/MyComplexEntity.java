@@ -1,9 +1,12 @@
 package de.michaelpoetz.generictransformer.entity;
 
+import de.michaelpoetz.generictransformer.annotation.Dto;
+
 public class MyComplexEntity {
 
 	private String string;
 
+	@Dto(field = "string")
 	private MyEntity entity;
 
 	public MyComplexEntity(String string2, MyEntity myEntity) {
