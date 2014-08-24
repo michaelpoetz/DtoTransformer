@@ -4,22 +4,20 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
+import de.michaelpoetz.generictransformer.annotation.Dto;
+
 public class EntityToDtoTransformer<E, D> {
 
 	public D apply(E entity, D dto) {
 		try {
 			fillGenericDto(entity, dto);
-		} catch (final SecurityException e) {
-			e.printStackTrace();
-		} catch (final IllegalAccessException e) {
-			e.printStackTrace();
 		} catch (final IllegalArgumentException e) {
-			e.printStackTrace();
-		} catch (final InvocationTargetException e) {
 			e.printStackTrace();
 		} catch (final NoSuchMethodException e) {
 			e.printStackTrace();
 		} catch (final ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (final Exception e) {
 			e.printStackTrace();
 		}
 		return dto;
@@ -35,10 +33,33 @@ public class EntityToDtoTransformer<E, D> {
 			if (dtoFieldExists(dtoFields, name)) {
 				final String getterName = "get" + methodNameFirstUpper(name);
 				final String setterName = "set" + methodNameFirstUpper(name);
-				getSetterMethod(dto, setterName, entityField.getType())
-						.invoke(dto, new Object[] { getGetterMethod(entity, getterName).invoke(entity, new Object[] {}) });
+				final String annotationField = fieldIsAnnotated(entityField);
+				if (annotationField != null) {
+					final Method entityGetter = getGetterMethod(entity, getterName);
+					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
+					final Method indirectGetterReturn = getGetterMethod(getterReturnValue, "get" + methodNameFirstUpper(annotationField));
+					final Class<?> indirectReturnType = indirectGetterReturn.getReturnType();
+					final Object indirectGetterReturnValue = indirectGetterReturn.invoke(getterReturnValue, new Object[] {});
+					final Method dtoSetter = getSetterMethod(dto, setterName, indirectReturnType);
+					dtoSetter.invoke(dto, new Object[] { indirectGetterReturnValue });
+				} else {
+					final Method entityGetter = getGetterMethod(entity, getterName);
+					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
+					final Method dtoSetter = getSetterMethod(dto, setterName, entityField.getType());
+					dtoSetter.invoke(dto, new Object[] { getterReturnValue });
+
+				}
 			}
 		}
+	}
+
+	private String fieldIsAnnotated(Field entityField) throws ClassNotFoundException {
+		final Dto dto = entityField.getAnnotation(Dto.class);
+		if (dto != null) {
+			return dto.field();
+		}
+		return null;
+
 	}
 
 	private boolean dtoFieldExists(Field[] dtoFields, String name) {

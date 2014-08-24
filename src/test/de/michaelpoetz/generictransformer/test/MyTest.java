@@ -14,7 +14,7 @@ public class MyTest {
 
 	@Test
 	public void shouldTransformSimpleEntityToDto() {
-		final MyEntity entity = new MyEntity("mystring");
+		final MyEntity entity = new MyEntity(1, "mystring");
 		MyEntityDto dto = new MyEntityDto();
 		dto = new EntityToDtoTransformer<MyEntity, MyEntityDto>().apply(entity, dto);
 
@@ -23,11 +23,12 @@ public class MyTest {
 
 	@Test
 	public void shouldTransformMoreComplexEntityToDto() {
-		final MyComplexEntity entity = new MyComplexEntity("mystring", new MyEntity("someOtherString"));
+		final MyComplexEntity entity = new MyComplexEntity("mystring", new MyEntity(100, "someOtherString"));
 		MyComplexEntityDto dto = new MyComplexEntityDto();
 		dto = new EntityToDtoTransformer<MyComplexEntity, MyComplexEntityDto>().apply(entity, dto);
 
 		assertEquals(dto.getString(), entity.getString());
-		assertEquals(dto.getEntity().getString(), entity.getEntity().getString());
+		assertEquals(dto.getEntity(), entity.getEntity().getString());
+		assertEquals(dto.getId(), entity.getEntity().getId());
 	}
 }
