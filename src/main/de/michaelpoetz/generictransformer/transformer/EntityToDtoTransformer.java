@@ -4,7 +4,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.List;
 
 import de.michaelpoetz.generictransformer.annotation.Dto;
 
@@ -13,59 +12,54 @@ public class EntityToDtoTransformer<E, D> {
 	public D apply(E entity, D dto) {
 		try {
 			fillGenericDto(entity, dto);
-		} catch (final IllegalArgumentException e) {
-			e.printStackTrace();
-		} catch (final NoSuchMethodException e) {
-			e.printStackTrace();
-		} catch (final ClassNotFoundException e) {
-			e.printStackTrace();
 		} catch (final Exception e) {
 			e.printStackTrace();
 		}
 		return dto;
 	}
 
-	private void fillGenericDto(E entity, D dto) throws ClassNotFoundException, IllegalAccessException, InvocationTargetException,
-			IllegalArgumentException, NoSuchMethodException, SecurityException {
-		final Field[] entityFields = getFieldsArray(entity);
-		final Field[] dtoFields = getFieldsArray(dto);
+	private void fillGenericDto(E entity, D dto) throws
+			ClassNotFoundException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
 
-		for (final Field entityField : entityFields) {
+		for (final Field entityField : getFieldsArray(entity)) {
 			final String name = entityField.getName();
-			if (dtoFieldExists(dtoFields, name)) {
-				final String getterName = "get" + methodNameFirstUpper(name);
-				final String setterName = "set" + methodNameFirstUpper(name);
+			final Class<?> returnType = getDtoFieldReturnType(getFieldsArray(dto), name);
+			if (returnType != null) {
 				final String annotationField = fieldIsAnnotated(entityField);
+				final Method dtoSetter = getSetterMethod(dto, name, returnType);
+				final Method entityGetter = getGetterMethod(entity, name);
+				Object valueToBeSet = new Object();
 				if (annotationField != null) {
-					final Method entityGetter = getGetterMethod(entity, getterName);
 					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
-					if (entityGetter.getReturnType().isArray() || entityGetter.getReturnType().equals(Class.forName("java.util.List"))) {
-						// Liste mit GenericType
-						final List<Object> tmp = new ArrayList<Object>();
-						for (final Object o : (ArrayList<Object>) getterReturnValue) {
-							final Method listIterationGetter = getGetterMethod(o, "get" + methodNameFirstUpper(annotationField));
-							tmp.add(listIterationGetter.invoke(o, new Object[] {}));
-						}
-						final Method dtoSetter = getSetterMethod(dto, setterName, Class.forName("java.util.List"));
-						dtoSetter.invoke(dto, new Object[] { tmp });
+					// Build in a check so that Collection types must be matched by a java.util.List on Dto-Side
+					if (returnType.equals(Class.forName("java.util.List"))) {
+						valueToBeSet = fillList(annotationField, getterReturnValue);
 					} else {
-						final Method indirectGetterReturn = getGetterMethod(getterReturnValue, "get" + methodNameFirstUpper(annotationField));
-						final Class<?> indirectReturnType = indirectGetterReturn.getReturnType();
-						final Object indirectGetterReturnValue = indirectGetterReturn.invoke(getterReturnValue, new Object[] {});
-						final Method dtoSetter = getSetterMethod(dto, setterName, indirectReturnType);
-						dtoSetter.invoke(dto, new Object[] { indirectGetterReturnValue });
+						final Method indirectGetterReturn = getGetterMethod(getterReturnValue, annotationField);
+						valueToBeSet = indirectGetterReturn.invoke(getterReturnValue, new Object[] {});
+
 					}
 				} else {
-					final Method entityGetter = getGetterMethod(entity, getterName);
-					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
-					final Method dtoSetter = getSetterMethod(dto, setterName, entityField.getType());
-					dtoSetter.invoke(dto, new Object[] { getterReturnValue });
+					valueToBeSet = entityGetter.invoke(entity, new Object[] {});
 				}
+				dtoSetter.invoke(dto, new Object[] { valueToBeSet });
 			}
 		}
 	}
 
-	private String fieldIsAnnotated(Field entityField) throws ClassNotFoundException {
+	@SuppressWarnings("unchecked")
+	private Object fillList(final String annotationField, final Object getterReturnValue) throws NoSuchMethodException, IllegalAccessException,
+			IllegalArgumentException, InvocationTargetException {
+		Object valueToBeSet;
+		valueToBeSet = new ArrayList<Object>();
+		for (final Object o : (ArrayList<Object>) getterReturnValue) {
+			final Method listIterationGetter = getGetterMethod(o, annotationField);
+			((ArrayList<Object>) valueToBeSet).add(listIterationGetter.invoke(o, new Object[] {}));
+		}
+		return valueToBeSet;
+	}
+
+	private String fieldIsAnnotated(Field entityField) {
 		final Dto dto = entityField.getAnnotation(Dto.class);
 		if (dto != null) {
 			return dto.field();
@@ -74,32 +68,28 @@ public class EntityToDtoTransformer<E, D> {
 
 	}
 
-	private boolean dtoFieldExists(Field[] dtoFields, String name) {
+	private Class<?> getDtoFieldReturnType(Field[] dtoFields, String name) {
 		for (final Field dtoField : dtoFields) {
 			if (dtoField.getName().equals(name)) {
-				return true;
+				return dtoField.getType();
 			}
 		}
-		return false;
+		return null;
 	}
 
 	private String methodNameFirstUpper(final String name) {
 		return name.replaceFirst(name.substring(0, 1), name.substring(0, 1).toUpperCase());
 	}
 
-	private Field[] getFieldsArray(Object object) throws ClassNotFoundException {
-		return Class.forName(object.getClass().getName()).getDeclaredFields();
+	private Field[] getFieldsArray(Object object) {
+		return object.getClass().getDeclaredFields();
 	}
 
-	private Method getGetterMethod(Object object, String name) throws ClassNotFoundException, NoSuchMethodException,
-			SecurityException {
-		final Class<?> className = Class.forName(object.getClass().getName());
-		return className.getMethod(name, new Class<?>[] {});
+	private Method getGetterMethod(Object object, String name) throws NoSuchMethodException {
+		return object.getClass().getMethod("get" + methodNameFirstUpper(name), new Class<?>[] {});
 	}
 
-	private Method getSetterMethod(Object object, String name, Class<?> parameter) throws ClassNotFoundException, NoSuchMethodException,
-			SecurityException {
-		final Class<?> className = Class.forName(object.getClass().getName());
-		return className.getMethod(name, new Class<?>[] { parameter });
+	private Method getSetterMethod(Object object, String name, Class<?> parameter) throws NoSuchMethodException {
+		return object.getClass().getMethod("set" + methodNameFirstUpper(name), new Class<?>[] { parameter });
 	}
 }
