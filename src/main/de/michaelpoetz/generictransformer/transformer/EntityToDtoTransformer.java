@@ -3,6 +3,8 @@ package de.michaelpoetz.generictransformer.transformer;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 import de.michaelpoetz.generictransformer.annotation.Dto;
 
@@ -37,17 +39,27 @@ public class EntityToDtoTransformer<E, D> {
 				if (annotationField != null) {
 					final Method entityGetter = getGetterMethod(entity, getterName);
 					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
-					final Method indirectGetterReturn = getGetterMethod(getterReturnValue, "get" + methodNameFirstUpper(annotationField));
-					final Class<?> indirectReturnType = indirectGetterReturn.getReturnType();
-					final Object indirectGetterReturnValue = indirectGetterReturn.invoke(getterReturnValue, new Object[] {});
-					final Method dtoSetter = getSetterMethod(dto, setterName, indirectReturnType);
-					dtoSetter.invoke(dto, new Object[] { indirectGetterReturnValue });
+					if (entityGetter.getReturnType().isArray() || entityGetter.getReturnType().equals(Class.forName("java.util.List"))) {
+						// Liste mit GenericType
+						final List<Object> tmp = new ArrayList<Object>();
+						for (final Object o : (ArrayList<Object>) getterReturnValue) {
+							final Method listIterationGetter = getGetterMethod(o, "get" + methodNameFirstUpper(annotationField));
+							tmp.add(listIterationGetter.invoke(o, new Object[] {}));
+						}
+						final Method dtoSetter = getSetterMethod(dto, setterName, Class.forName("java.util.List"));
+						dtoSetter.invoke(dto, new Object[] { tmp });
+					} else {
+						final Method indirectGetterReturn = getGetterMethod(getterReturnValue, "get" + methodNameFirstUpper(annotationField));
+						final Class<?> indirectReturnType = indirectGetterReturn.getReturnType();
+						final Object indirectGetterReturnValue = indirectGetterReturn.invoke(getterReturnValue, new Object[] {});
+						final Method dtoSetter = getSetterMethod(dto, setterName, indirectReturnType);
+						dtoSetter.invoke(dto, new Object[] { indirectGetterReturnValue });
+					}
 				} else {
 					final Method entityGetter = getGetterMethod(entity, getterName);
 					final Object getterReturnValue = entityGetter.invoke(entity, new Object[] {});
 					final Method dtoSetter = getSetterMethod(dto, setterName, entityField.getType());
 					dtoSetter.invoke(dto, new Object[] { getterReturnValue });
-
 				}
 			}
 		}
